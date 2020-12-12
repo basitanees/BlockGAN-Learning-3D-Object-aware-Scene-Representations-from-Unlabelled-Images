@@ -47,8 +47,8 @@ function iterate(d::ClevrData, state=collect(1:d.num_instances))
     end
 end
 
-function dAccuracy(G, D, z, real)
-    fake = G(z)
+function dAccuracy(G, D, z, z2, real)
+    fake = G(z, z2)
     fakePred = sum((D(fake) .< 0.5) .== 1)
     truePred = sum((D(real) .> 0.5) .== 1)
     accuray = (fakePred + truePred)/(2*size(real)[end])
