@@ -1,7 +1,7 @@
 function transform_voxel_to_match_image(voxel)
-    voxel = permutedims(voxel, (1, 3, 2, 4, 5)) # 2,1,3,4,5
-    idx_rev = size(voxel,3):-1:1
-    voxel = voxel[:, :, idx_rev, :, :]
+    voxel = permutedims(voxel, (2, 1, 3, 4, 5)) # 2,1,3,4,5
+    idx_rev = size(voxel,1):-1:1
+    voxel = voxel[idx_rev, :, :, :, :]
     return voxel
 end
 
@@ -22,18 +22,12 @@ function tf_interpolate(voxel, x, y, z, out_size)
     n_channels = shape[4]
     batch_size = shape[5]
 
-#     x = convert(array_type, x)
-#     y = convert(array_type, y)
-#     z = convert(array_type, z)
-
     out_height = out_size[1]
     out_width = out_size[2]
     out_depth = out_size[3]
     out_channel = out_size[4]
 
     zero = 0
-#     zero = zeros() # tf.zeros([], dtype='int32')
-#     zero = convert(array_type, zero)
     max_y = height-1 # as int
     max_x = width-1
     max_z = depth-1
@@ -52,14 +46,11 @@ function tf_interpolate(voxel, x, y, z, out_size)
     y1 = clip(y1, zero, max_y)
     z0 = clip(z0, zero, max_z)
     z1 = clip(z1, zero, max_z)
-    
-    
 
     #A 1D tensor of base indicies describe First index for each shape/map in the whole batch
     #tf.range(batch_size) * width * height * depth : Element to repeat. Each selement in the list is incremented by width*height*depth amount
     # out_height * out_width * out_depth: n of repeat. Create chunks of out_height*out_width*out_depth length with the same value created by tf.rage(batch_size) *width*height*dept
     base = tf_repeat(collect(0:batch_size-1) * width * height * depth, out_height * out_width * out_depth)
-    # add +1 for julia indexing
 
     #Find the Z element of each index
 #     base = convert(array_type, base)
@@ -91,22 +82,12 @@ function tf_interpolate(voxel, x, y, z, out_size)
     idx_f = convert(Array{Int32}, idx_f)
     idx_g = convert(Array{Int32}, idx_g)
     idx_h = convert(Array{Int32}, idx_h)
-    
-#     println(maximum(idx_a))
-#     println(maximum(idx_b))
-#     println(maximum(idx_c))
-#     println(maximum(idx_d))
-#     println(maximum(idx_e))
-#     println(maximum(idx_f))
-#     println(maximum(idx_g))
-#     println(maximum(idx_h))
 
     # use indices to lookup pixels in the flat image and restore
     # channels dim
-    voxel = permutedims(voxel, (4,2,1,3,5))
+    voxel = permutedims(voxel, (4,3,2,1,5))
     voxel_flat = reshape(voxel, n_channels, :) # may need to transpose
     voxel_flat = permutedims(voxel_flat, (2,1))
-    
 #     voxel_flat = convert(array_type, voxel_flat)
 
 #     Ia = view(voxel_flat, idx_a.+1, :)
@@ -119,13 +100,6 @@ function tf_interpolate(voxel, x, y, z, out_size)
 #     Ih = view(voxel_flat, idx_h.+1, :)
 
     # and finally calculate interpolated values
-#     x0_f = convert(array_type, x0)
-#     x1_f = convert(array_type, x1)
-#     y0_f = convert(array_type, y0)
-#     y1_f = convert(array_type, y1)
-#     z0_f = convert(array_type, z0)
-#     z1_f = convert(array_type, z1)
-    
     x0_f = x0
     x1_f = x1
     y0_f = y0
@@ -217,36 +191,29 @@ function tf_rotation_resampling_skew(voxel_array, transformation_matrix, skew_ma
     
     total_M = bmm(bmm(bmm(skew_inv, T_translate), Scale_matrix), transformation_matrix)
     total_M = bmm(bmm(T_new_inv, total_M), T)
-#     try
+
     total_M = batch_inv(total_M)
     
-    total_M = total_M[1:3, :, :] #Ignore the homogenous coordinate so the results are 3D vectors
+#     total_M = total_M[1:3, :, :] #Ignore the homogenous coordinate so the results are 3D vectors
     grid = tf_voxel_meshgrid(new_size, new_size, new_size, homogeneous=true)
     repeatHelper2 = ones(size(grid)..., batch_size)
     grid = add_dim(grid)
     grid = grid .* repeatHelper2
     grid_transform = bmm(total_M, grid)
-    
-#     homo_coor = add_dim(grid_transform[4, :, :])
-#     homo_coor = tf.tile(homo_coor, (1, 4, 1))
-#     grid_transform = tf.div(grid_transform, homo_coor)
+    homo_coor = add_dim_start(grid_transform[4, :, :])
+#     homo_coor = tile(homo_coor, (4, 1, 1))
+    grid_transform = grid_transform ./ homo_coor
     
 #     grid_transform = convert(array_type, grid_transform)
     x_s_flat = reshape(grid_transform[1, :, :], :)
     y_s_flat = reshape(grid_transform[2, :, :], :)
     z_s_flat = reshape(grid_transform[3, :, :], :)
 
-#     x_s_flat, y_s_flat, z_s_flat, [new_size, new_size, new_size, n_channels, batch_size]
-# end
-
-# function trilinear_interpolate(voxel_array, x_s_flat, y_s_flat, z_s_flat, outSize)
     input_transformed = tf_interpolate(voxel_array, x_s_flat, y_s_flat, z_s_flat, [new_size, new_size, new_size, n_channels, batch_size])
     input_transformed = permutedims(input_transformed, (2,1))
     target = reshape(input_transformed, n_channels, new_size, new_size, new_size, batch_size)
-    target = permutedims(target, (3,2,4,1,5))
+    target = permutedims(target, (4,3,2,1,5))
     return target, grid_transform
-#     catch
-#         return None
 end
 
 function tf_rotation_resampling(voxel_array, transformation_matrix, params, Scale_matrix = None, size1=64, new_size=128)
@@ -314,7 +281,8 @@ function tf_rotation_resampling(voxel_array, transformation_matrix, params, Scal
     input_transformed = tf_interpolate(voxel_array, x_s_flat, y_s_flat, z_s_flat,[new_size, new_size, new_size, n_channels, batch_size])
     input_transformed = permutedims(input_transformed, (2,1))
     target = reshape(input_transformed, n_channels, new_size, new_size, new_size, batch_size)
-    target = permutedims(target, (3,2,4,1,5))
+#     target = permutedims(target, (3,2,4,1,5))
+    target = permutedims(target, (4,3,2,1,5))
     return target, grid_transform
 #     return
 #     catch
